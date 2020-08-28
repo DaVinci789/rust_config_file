@@ -1,6 +1,6 @@
 use std::io::Read;
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Clone, Copy)]
 enum TokenType {
   TypeIdentifier,
   //Error,
@@ -10,17 +10,20 @@ enum TokenType {
   TypeAssignment,
   StringLiteral,
   NumberLiteral,
+  BoolLiteral,
   Equals,
   CurlyBracketStart,
   CurlyBracketEnd,
   // SquareBracketStart,
   // SquareBracketEnd,
+  TypeBool,
   TypeString,
   TypeNumber,
   TypeMap,
   //Identifier
 }
 
+#[derive(PartialEq, Clone)]
 struct Token {
   token: String,
   tokentype: TokenType,
@@ -31,6 +34,83 @@ struct ASTNode {
   children: std::vec::Vec<ASTNode>,
 }
 
+struct TokenTraverse {
+  is_eof: bool,
+  token_index: i64,
+  current_token: Token,
+}
+
+impl TokenTraverse {
+  pub fn new(tokens: &[Token]) -> TokenTraverse {
+    TokenTraverse {
+      is_eof : false,
+      token_index : 0,
+      current_token : tokens[0].clone(),
+    }
+  }
+  pub fn token_is_literal(token: Token) -> bool {
+    return token.tokentype == TokenType::NumberLiteral || token.tokentype == TokenType::StringLiteral || token.tokentype == TokenType::BoolLiteral;
+  }
+  fn accept(&mut self, tokentype: TokenType, tokens: &[Token]) -> bool {
+    if self.current_token.tokentype == tokentype {
+      self.next_token(tokens);
+      return true;
+    }
+    return false;
+  }
+  fn expect(&mut self, tokentype: TokenType, tokens: &[Token]) -> bool {
+    if self.accept(tokentype, tokens) {
+      return true;
+    }
+    // error handling
+    return false;
+  }
+  fn definition(&mut self, tokens: &[Token]) {
+    print!("{} ", self.current_token.token);
+    if !self.expect(TokenType::PossibleIdentifier, tokens) {
+      println!("Error Invalid Syntax: {}", self.current_token);
+      return;
+    }
+
+    self.next_token(tokens);
+    loop {
+      if self.current_token.tokentype == TokenType::Equals {
+        self.next_token(tokens);
+      }
+      if TokenTraverse::token_is_literal(self.current_token.clone()) {
+        break;
+      }
+    }
+    println!("{}", self.current_token.token);
+  }
+  fn block(&mut self, tokens: &[Token]) {
+    if self.accept(TokenType::TypeIdentifier, tokens) {
+      println!("Type: {}", self.current_token.token);
+      println!("-------------");
+      let sym1 = self.expect(TokenType::PossibleIdentifier, tokens);
+      let sym2 = self.expect(TokenType::CurlyBracketStart, tokens);
+      if !sym1 || !sym2 {
+        println!("Error! Invalid Syntax: {}", self.current_token);
+        return;
+      }
+      loop {
+        self.definition(tokens);
+        self.next_token(tokens);
+        if self.current_token.tokentype == TokenType::CurlyBracketEnd {
+          break;
+        }
+      }
+      println!("-------------");
+    }
+  }
+  fn next_token(&mut self, tokens: &[Token]) {
+    self.token_index += 1;
+    self.current_token = tokens[self.token_index as usize].clone();
+  }
+}
+
+
+
 impl std::fmt::Display for Token {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self.tokentype {
@@ -38,7 +118,9 @@ impl std::fmt::Display for Token {
       TokenType::PossibleIdentifier => write!(f, "PossibleIdentifier: {}", self.token),
       TokenType::StringLiteral => write!(f, "StringLiteral: {}", self.token),
       TokenType::NumberLiteral => write!(f, "NumberLiteral: {}", self.token),
+      TokenType::BoolLiteral => write!(f, "BoolLiteral: {}", self.token),
       TokenType::Label => write!(f, "Label: {}", self.token),
+      TokenType::TypeBool => write!(f, "TypeBool: {}", self.token),
       TokenType::TypeString => write!(f, "StringLiteral: {}", self.token),
       TokenType::TypeNumber => write!(f, "TypeNumber: {}", self.token),
       TokenType::TypeList => write!(f, "TypeList: {}", self.token),
@@ -109,9 +191,19 @@ fn consume_token(token: String) -> Token {
     Some('#'..='9') => return Token {token: token, tokentype: TokenType::NumberLiteral},
     _ => (),
   }
+
+  match &token_as_str[0..4] {
+    "true" => return Token {token: token, tokentype: TokenType::BoolLiteral},
+    // HACK: This is the worst thing i've ever done.
+    "fals" => return Token {token: token, tokentype: TokenType::BoolLiteral},
+    _ => (),
+  }
+
+
   match token_as_str {
     "type" => return Token {token: token, tokentype: TokenType::TypeIdentifier},
     "number" => return Token {token: token, tokentype: TokenType::TypeNumber},
+    "bool" => return Token {token: token, tokentype: TokenType::TypeBool},
     "string" => return Token {token: token, tokentype: TokenType::TypeString},
     "map" => return Token {token: token, tokentype: TokenType::TypeMap},
     "list" => return Token {token: token, tokentype: TokenType::TypeList},
@@ -122,7 +214,13 @@ fn consume_token(token: String) -> Token {
 
 fn construct_ast(tokens: &[Token]) -> std::vec::Vec<ASTNode> {
   let mut ast = vec![];
-  for token in tokens {
-  }
+
+  let mut token_traversal = TokenTraverse::new(tokens);
+  
+  // while !token_traversal.is_eof {
+  //   token_traversal.next_token(tokens);
+  //   token_traversal.block(tokens);
+  // }
+  token_traversal.block(tokens);
   ast
 }
