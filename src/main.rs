@@ -1,3 +1,4 @@
+use std::fs;
 use std::io::Read;
 
 #[derive(PartialEq, Clone, Copy)]
@@ -20,7 +21,6 @@ enum TokenType {
     TypeNumber,
     TypeMap,
     PossibleIdentifier,
-    UserType,
     EOF,
     Unintitialized,
 }
@@ -31,7 +31,7 @@ struct Token {
     tokentype: TokenType,
 }
 
-#[derive(Clone)]
+#[derive(PartialEq, Clone)]
 struct Field {
     identifier: String,
     value: Token,
@@ -81,7 +81,6 @@ impl std::fmt::Display for Token {
             TokenType::CurlyBracketEnd => write!(f, "CurlyBracketEnd: {}", self.token),
             TokenType::Equals => write!(f, "Equals: {}", self.token),
             TokenType::TypeAssignment => write!(f, "TypeAssignment: {}", self.token),
-            TokenType::UserType => write!(f, "UserType: {}", self.token),
             TokenType::EOF => write!(f, "EOF"),
             TokenType::Unintitialized => write!(f, "Uninitialized Token"),
             // TokenType::SquareBracketStart => write!(f, "SquareBracketStart: {}", self.token),
@@ -108,6 +107,12 @@ impl Type {
             typename: String::new(),
             fields: Vec::new(),
         }
+    }
+}
+
+impl std::cmp::PartialEq for Type {
+    fn eq(&self, other: &Self) -> bool {
+        self.typename == other.typename
     }
 }
 
@@ -212,11 +217,6 @@ impl TokenTraverse {
 
             // [Type Label]
             if self.current_token.tokentype == TokenType::Label {
-                println!(
-                    "Setting type of rest of file to {}",
-                    self.current_token.token
-                );
-                println!("-------------");
                 let manage_string = |type_string: String| -> String {
                     let mut correct_string = String::new();
                     for character in type_string.chars() {
@@ -229,8 +229,21 @@ impl TokenTraverse {
                     }
                     correct_string
                 };
+
                 let corrected_type = manage_string(self.current_token.token.clone());
-                self.current_type = Some(Type { typename: corrected_type, fields: Vec::new()});
+
+                if !self.file.user_types.iter().any(|v| v.typename == corrected_type) {
+                    panic!("Type {} not found", corrected_type);
+                }
+
+                println!(
+                    "Setting type of rest of file to {}",
+                    self.current_token.token
+                );
+                println!("-------------");
+
+                self.current_type = Some(self.file.user_types.iter().filter(|v| v.typename == corrected_type).nth(0).unwrap().clone());
+                //self.current_type = Some(Type { typename: corrected_type, fields: Vec::new()});
             }
 
             // Any top level identifier
@@ -241,14 +254,6 @@ impl TokenTraverse {
 
                 self.next_token(tokens);
                 if self.expect(TokenType::TypeAssignment, tokens) {
-                    // let mut success = false;
-                    // for usertype in self.file.user_types {
-                    //     if usertype.typename == self.current_token.token {
-                    //         success = true;
-                    //         break;
-                    //     }
-                    // }
-                    // if
                     if !self.file.user_types.iter().any(|v: &Type| v.typename == self.current_token.token) {
                         panic!("Type {} does not exist", self.current_token.token);
                     }
@@ -297,8 +302,16 @@ fn consume_token(token: String) -> Token {
     let token_as_str: &str = &(token.clone())[..];
     match token_as_str.chars().nth(0) {
         Some('"') => {
+            // Remove quotes from string
+            let mut next_token = token_as_str;
+            if next_token.chars().nth(0) == Some('"') {
+                next_token = &next_token[1..token_as_str.len()];
+            }
+            if next_token.chars().nth(next_token.len() - 1) == Some(',') {
+                next_token = &next_token[0..token_as_str.len() - 3];
+            }
             return Token {
-                token: token,
+                token: next_token.to_string(),
                 tokentype: TokenType::StringLiteral,
             }
         }
@@ -333,8 +346,12 @@ fn consume_token(token: String) -> Token {
             }
         }
         Some('#'..='9') => {
+            let mut next_token = token_as_str;
+            if token_as_str.chars().nth(token_as_str.len() - 1) == Some(',') {
+                next_token = &token_as_str[0..token_as_str.len() - 1];
+            }
             return Token {
-                token: token,
+                token: next_token.to_string(),
                 tokentype: TokenType::NumberLiteral,
             }
         }
@@ -396,8 +413,14 @@ fn consume_token(token: String) -> Token {
             }
         }
         _ => {
+            // If a field is typed, we still capture the colon at the end.
+            // This remove that colon at the end.
+            let mut next_token = token_as_str;
+            if token_as_str.chars().nth(token_as_str.len() - 1) == Some(':') {
+                next_token = &token_as_str[0..token_as_str.len() - 1];
+            }
             return Token {
-                token: token,
+                token: next_token.to_string(),
                 tokentype: TokenType::PossibleIdentifier,
             }
         }
@@ -427,7 +450,7 @@ fn construct_ast(tokens: &[Token]) -> ParsedFile {
         }
 
         // Print Fields
-        for field in userobject.fields.clone() {
+        for field in &userobject.fields {
             println!("\t{} = {}", field.identifier, field.value.token);
         }
 
@@ -437,16 +460,50 @@ fn construct_ast(tokens: &[Token]) -> ParsedFile {
     ast_result
 }
 
-fn assign_and_validate_types(file: &ParsedFile) {
-    for object in &file.user_objects {
-        println!("{}", object.object_name);
+// TODO: If type has a field that must be assigned by the children and that
+// value isn't assigned by the children, panic.
+/// Checks if each of the user's objects implements all the necessary values of its type
+/// and expands each object's fields to have a field of its parent if that field isn't there.
+fn fill_object_fields(file: &ParsedFile) -> Vec<Object> {
+    let mut typed_objects: Vec<Object> = vec![];
+    for object in &mut file.user_objects.clone() {
         if object.object_type.is_none() {
             continue;
         }
-        for field in &object.object_type.as_ref().unwrap().fields {
-            println!("{}: {}", field.identifier, field.value.token);
+
+        let mut field_found = false;
+        println!("{}", object.object_name);
+        for type_field in object.object_type.clone().unwrap().fields {
+            for object_field in &object.fields {
+                if type_field.identifier == object_field.identifier {
+                    println!("{}: {}", object_field.identifier, object_field.value.token);
+                    field_found = true;
+                    break;
+                } 
+            }
+            if field_found == true {
+                field_found = false;
+            } else {
+                object.fields.push(type_field.clone());
+                println!("{}: {}", type_field.identifier, type_field.value.token);
+            }
+        }
+        println!();
+        typed_objects.push(object.clone());
+    }
+    typed_objects
+}
+
+fn emit_json(typed_objects: &Vec<Object>) -> String {
+    let mut data = json::JsonValue::new_object();
+    for object in typed_objects {
+        data[object.object_name.clone()] = json::JsonValue::new_object();
+        for field in &object.fields {
+            data[object.object_name.clone()][field.identifier.clone()] = field.value.token.clone().into();
         }
     }
+    println!("{}", data);
+    json::stringify(data)
 }
 
 fn main() {
@@ -455,8 +512,9 @@ fn main() {
         panic!("No filename supplied.");
     }
     let filename = &command_args[1];
+    let filepath = std::path::Path::new(&filename);
 
-    let mut file = std::fs::File::open(filename).unwrap();
+    let mut file = std::fs::File::open(filepath).unwrap();
     let mut contents = String::new();
     file.read_to_string(&mut contents).unwrap();
 
@@ -497,5 +555,8 @@ fn main() {
     });
     // TODO: Make this an option type
     let ast = construct_ast(&symbols.as_slice());
-    assign_and_validate_types(&ast);
+    let typed_objects = fill_object_fields(&ast);
+
+    let output_path = format!("{}.{}", filepath.file_stem().unwrap().to_str().unwrap().to_string(), "json");
+    fs::write(output_path, emit_json(&typed_objects)).expect("Unable to write to file");
 }
