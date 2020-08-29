@@ -54,6 +54,7 @@ struct Object {
 struct ParsedFile {
     user_types: Vec<Type>,
     user_objects: Vec<Object>,
+    user_fields: Vec<Field>,
 }
 
 struct TokenTraverse {
@@ -131,6 +132,7 @@ impl ParsedFile {
         ParsedFile {
             user_types: Vec::new(),
             user_objects: Vec::new(),
+            user_fields: Vec::new(),
         }
     }
 }
@@ -248,42 +250,52 @@ impl TokenTraverse {
 
             // Any top level identifier
             if self.current_token.tokentype == TokenType::PossibleIdentifier {
-                let mut userobject = Object::new();
-                userobject.object_name = self.current_token.token.clone();
-                print!("Object: {} ", self.current_token.token);
-
-                self.next_token(tokens);
-                if self.expect(TokenType::TypeAssignment, tokens) {
-                    if !self.file.user_types.iter().any(|v: &Type| v.typename == self.current_token.token) {
-                        panic!("Type {} does not exist", self.current_token.token);
-                    }
-                    let found_type = self.file.user_types.iter().filter(|v| v.typename == self.current_token.token).nth(0).unwrap();
-                    userobject.object_type = Some(found_type.clone());//Some(self.current_token.token.clone());
-                    println!("of type: {}", self.current_token.token);
+                if self.look_at_next_token(tokens).tokentype == TokenType::Equals {
+                    let mut userfield = Field::new();
+                    userfield.identifier = self.current_token.token.clone();
                     self.next_token(tokens);
+                    self.next_token(tokens);
+                    userfield.value = self.current_token.clone();
+                    self.file.user_fields.push(userfield.clone());
                 } else {
-                    //userobject.object_type = Some(self.current_type.clone());
-                    match &self.current_type {
-                        Some(_) => userobject.object_type = self.current_type.clone(),
-                        None => (),
-                    }
-                    print!("\n");
-                }
-                println!("-------------");
+                    // Otherwise, this is an object
+                    let mut userobject = Object::new();
+                    userobject.object_name = self.current_token.token.clone();
+                    print!("Object: {} ", self.current_token.token);
 
-                if !self.expect(TokenType::CurlyBracketStart, tokens) {
-                    println!("Error! Missing Start Bracket");
-                }
-
-                loop {
-                    userobject.fields.push(self.definition(tokens));
                     self.next_token(tokens);
-                    if self.current_token.tokentype == TokenType::CurlyBracketEnd {
-                        break;
+                    if self.expect(TokenType::TypeAssignment, tokens) {
+                        if !self.file.user_types.iter().any(|v: &Type| v.typename == self.current_token.token) {
+                            panic!("Type {} does not exist", self.current_token.token);
+                        }
+                        let found_type = self.file.user_types.iter().filter(|v| v.typename == self.current_token.token).nth(0).unwrap();
+                        userobject.object_type = Some(found_type.clone());//Some(self.current_token.token.clone());
+                        println!("of type: {}", self.current_token.token);
+                        self.next_token(tokens);
+                    } else {
+                        //userobject.object_type = Some(self.current_type.clone());
+                        match &self.current_type {
+                            Some(_) => userobject.object_type = self.current_type.clone(),
+                            None => (),
+                        }
+                        print!("\n");
                     }
+                    println!("-------------");
+
+                    if !self.expect(TokenType::CurlyBracketStart, tokens) {
+                        println!("Error! Missing Start Bracket");
+                    }
+
+                    loop {
+                        userobject.fields.push(self.definition(tokens));
+                        self.next_token(tokens);
+                        if self.current_token.tokentype == TokenType::CurlyBracketEnd {
+                            break;
+                        }
+                    }
+                    println!("-------------");
+                    self.file.user_objects.push(userobject);
                 }
-                println!("-------------");
-                self.file.user_objects.push(userobject);
             }
             self.next_token(tokens);
             if self.current_token.tokentype == TokenType::EOF {
@@ -292,6 +304,11 @@ impl TokenTraverse {
         }
         self.file.clone()
     }
+
+    fn look_at_next_token(&self, tokens: &[Token]) -> Token {
+        tokens[(self.token_index + 1) as usize].clone()
+    }
+    
     fn next_token(&mut self, tokens: &[Token]) {
         self.token_index += 1;
         self.current_token = tokens[self.token_index as usize].clone();
@@ -309,6 +326,8 @@ fn consume_token(token: String) -> Token {
             }
             if next_token.chars().nth(next_token.len() - 1) == Some(',') {
                 next_token = &next_token[0..token_as_str.len() - 3];
+            } else if next_token.chars().nth(next_token.len() - 1) == Some('"') {
+                next_token = &next_token[0..token_as_str.len() - 2];
             }
             return Token {
                 token: next_token.to_string(),
@@ -361,14 +380,14 @@ fn consume_token(token: String) -> Token {
     match &token_as_str[0..4] {
         "true" => {
             return Token {
-                token: token,
+                token: "true".to_string(),
                 tokentype: TokenType::BoolLiteral,
             }
         }
         // HACK: This is the worst thing i've ever done.
         "fals" => {
             return Token {
-                token: token,
+                token: "false".to_string(),
                 tokentype: TokenType::BoolLiteral,
             }
         }
@@ -494,8 +513,11 @@ fn fill_object_fields(file: &ParsedFile) -> Vec<Object> {
     typed_objects
 }
 
-fn emit_json(typed_objects: &Vec<Object>) -> String {
+fn emit_json(typed_objects: &Vec<Object>, user_fields: &Vec<Field>) -> String {
     let mut data = json::JsonValue::new_object();
+    for field in user_fields {
+        data[field.identifier.clone()] = field.value.token.clone().into();
+    }
     for object in typed_objects {
         data[object.object_name.clone()] = json::JsonValue::new_object();
         for field in &object.fields {
@@ -523,7 +545,22 @@ fn main() {
     let mut current_token = String::new();
     let mut tokens = vec![];
     let mut is_string_literal = false;
+    let mut is_comment = false;
     for index in 0..chars.len() {
+        // TODO: Multi-line comments would be cool
+        // Single Line Comment Checking
+        if (chars[index] == '/') && (chars[index + 1] == '/') {
+            is_comment = true;
+            continue;
+        }
+        if (chars[index] == '\n') && (is_comment == true) {
+            is_comment = false;
+            continue;
+        }
+        if is_comment == true {
+            continue;
+        }
+
         if (chars[index] == ' ') || (chars[index] == '\n') {
             let test = current_token.clone();
             if test.trim().is_empty() {
@@ -553,10 +590,11 @@ fn main() {
         token: "".to_string(),
         tokentype: TokenType::EOF,
     });
+
     // TODO: Make this an option type
     let ast = construct_ast(&symbols.as_slice());
     let typed_objects = fill_object_fields(&ast);
 
     let output_path = format!("{}.{}", filepath.file_stem().unwrap().to_str().unwrap().to_string(), "json");
-    fs::write(output_path, emit_json(&typed_objects)).expect("Unable to write to file");
+    fs::write(output_path, emit_json(&typed_objects, &ast.user_fields)).expect("Unable to write to file");
 }
