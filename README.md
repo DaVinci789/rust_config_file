@@ -88,7 +88,6 @@ jsonified
 ```
 
 ## Specifying a type for the rest of the file
-Once a type label is set, the type cannot be changed for the rest of the file
 
 config file format
 ```
