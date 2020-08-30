@@ -17,7 +17,7 @@ jobs:
             asset_name: config-file-linux-amd64
           - os: windows-latest
             artifact_name: config-file.exe
-            asset_name: config-file-windows-amd64
+            asset_name: config-file-windows-amd64.exe
           - os: macos-latest
             artifact_name: config-file
             asset_name: config-file-macos-amd64
