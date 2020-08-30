@@ -86,3 +86,43 @@ jsonified
   }
 }
 ```
+
+## Specifying a type for the rest of the file
+Once a type label is set, the type cannot be changed for the rest of the file
+
+config file format
+```
+type Creature {
+  name: "",
+  health: 10,
+  strength: 5,
+  defense: 5,
+}
+
+[Creature]
+Goblin {
+  name: "A Wonderful Goblin",
+}
+
+Vampire {
+  name: "A Scary Vampire",
+}
+```
+
+jsonified
+```
+{
+  "Goblin": {
+    name: "A Wonderful Goblin",
+    health: 10,
+    strength: 5,
+    defense: 5
+  },
+  "Vampire": {
+    name: "A Scary Vampire",
+    health: 10,
+    strength: 5,
+    defense: 5
+  }
+}
+```
