@@ -1,4 +1,3 @@
-use std::fs;
 use std::io::Read;
 
 #[derive(PartialEq, Clone, Copy)]
@@ -400,21 +399,24 @@ fn consume_token(token: String) -> Token {
         _ => (),
     }
 
-    match &token_as_str[0..4] {
-        "true" => {
-            return Token {
-                token: "true".to_string(),
-                tokentype: TokenType::BoolLiteral,
+    // HACK: I don't know how to not test against a ranged slice and use [..]
+    // It keeps looping somewhere when I do that. Need to debug.
+    if token_as_str.len() > 4 {
+        match &token_as_str[0..4] {
+            "true" => {
+                return Token {
+                    token: "true".to_string(),
+                    tokentype: TokenType::BoolLiteral,
+                }
             }
-        }
-        // HACK: This is the worst thing i've ever done.
-        "fals" => {
-            return Token {
-                token: "false".to_string(),
-                tokentype: TokenType::BoolLiteral,
+            "false" => {
+                return Token {
+                    token: "false".to_string(),
+                    tokentype: TokenType::BoolLiteral,
+                }
             }
+            _ => (),
         }
-        _ => (),
     }
 
     match token_as_str {
@@ -585,6 +587,7 @@ fn main() {
 
     let chars: Vec<_> = contents.chars().collect();
 
+    // Separate file text into tokens
     let mut current_token = String::new();
     let mut tokens = vec![];
     let mut is_string_literal = false;
@@ -654,6 +657,7 @@ fn main() {
             "json"
         );
     }
-    fs::write(output_path, emit_json(&typed_objects, &ast.user_fields))
+
+    std::fs::write(output_path, emit_json(&typed_objects, &ast.user_fields))
         .expect("Unable to write to file");
 }
