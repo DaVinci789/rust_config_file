@@ -1,7 +1,6 @@
 use std::io::Read;
 
 // TODO
-// Use directive
 // Stronger Typing
 // Lists
 // List typing
@@ -767,4 +766,48 @@ fn main() {
 
     std::fs::write(output_path, emit_json(&typed_objects, &ast.user_fields))
         .expect("Unable to write to file");
+}
+
+/// Unit Testing
+
+#[allow(dead_code)]
+fn test_get_file() -> Vec<Token> {
+    let mut file = std::fs::File::open("src/file.cfg").unwrap();
+    let mut contents = String::new();
+    file.read_to_string(&mut contents).unwrap();
+
+    let chars: Vec<_> = contents.chars().collect();
+
+    let tokens = lex_characters(&chars);
+
+    let mut symbols = vec![];
+    for token in &tokens {
+        symbols.push(consume_token(token.to_string()));
+    }
+    symbols.push(Token {
+        token: "".to_string(),
+        tokentype: TokenType::EOF,
+    });
+    symbols.clone()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn symbols_1() {
+        let symbols = test_get_file();
+
+        assert_eq!(symbols[0].token, String::from("identifier"));
+        assert_eq!(symbols[2].token, String::from("value"));
+    }
+
+    #[test]
+    fn type_1() {
+        let symbols = test_get_file();
+        let ast = construct_ast(&symbols.as_slice());
+        let typed_objects = fill_object_fields(&ast);
+        assert_eq!(typed_objects[0].object_name, String::from("Vampire"));
+    }
 }
