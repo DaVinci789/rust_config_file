@@ -168,7 +168,7 @@ impl TokenTraverse {
         return false;
     }
 
-    fn definition(&mut self, tokens: &[Token]) -> Field {
+    fn field(&mut self, tokens: &[Token]) -> Field {
         let mut field = Field::new();
         print!("{} ", self.current_token.token);
         field.identifier = self.current_token.token.clone();
@@ -206,7 +206,7 @@ impl TokenTraverse {
                     println!("Error! Invalid Syntax: {}", self.current_token);
                 }
                 loop {
-                    usertype.fields.push(self.definition(tokens));
+                    usertype.fields.push(self.field(tokens));
                     self.next_token(tokens);
                     if self.current_token.tokentype == TokenType::CurlyBracketEnd {
                         break;
@@ -309,7 +309,7 @@ impl TokenTraverse {
                     }
 
                     loop {
-                        userobject.fields.push(self.definition(tokens));
+                        userobject.fields.push(self.field(tokens));
                         self.next_token(tokens);
                         if self.current_token.tokentype == TokenType::CurlyBracketEnd {
                             break;
