@@ -546,7 +546,7 @@ fn emit_json(typed_objects: &Vec<Object>, user_fields: &Vec<Field>) -> String {
 fn main() {
     let command_args: Vec<String> = std::env::args().collect();
 
-    if command_args.len() != 2 {
+    if command_args.len() < 2 {
         panic!("No filename supplied.");
     }
 
@@ -612,6 +612,17 @@ fn main() {
     let ast = construct_ast(&symbols.as_slice());
     let typed_objects = fill_object_fields(&ast);
 
-    let output_path = format!("{}.{}", filepath.file_stem().unwrap().to_str().unwrap().to_string(), "json");
+    let mut output_path = String::new();
+
+    if command_args.len() > 2 {
+        match &command_args[2][..] {
+            "-o" => {
+                output_path = command_args[3].clone();
+            },
+            _ => (),
+        }
+    } else {
+        output_path = format!("{}.{}", filepath.file_stem().unwrap().to_str().unwrap().to_string(), "json");
+    }
     fs::write(output_path, emit_json(&typed_objects, &ast.user_fields)).expect("Unable to write to file");
 }
