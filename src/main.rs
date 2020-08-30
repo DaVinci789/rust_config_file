@@ -234,7 +234,12 @@ impl TokenTraverse {
 
                 let corrected_type = manage_string(self.current_token.token.clone());
 
-                if !self.file.user_types.iter().any(|v| v.typename == corrected_type) {
+                if !self
+                    .file
+                    .user_types
+                    .iter()
+                    .any(|v| v.typename == corrected_type)
+                {
                     panic!("Type {} not found", corrected_type);
                 }
 
@@ -244,7 +249,15 @@ impl TokenTraverse {
                 );
                 println!("-------------");
 
-                self.current_type = Some(self.file.user_types.iter().filter(|v| v.typename == corrected_type).nth(0).unwrap().clone());
+                self.current_type = Some(
+                    self.file
+                        .user_types
+                        .iter()
+                        .filter(|v| v.typename == corrected_type)
+                        .nth(0)
+                        .unwrap()
+                        .clone(),
+                );
             }
 
             // Any top level identifier
@@ -264,11 +277,22 @@ impl TokenTraverse {
 
                     self.next_token(tokens);
                     if self.expect(TokenType::TypeAssignment, tokens) {
-                        if !self.file.user_types.iter().any(|v: &Type| v.typename == self.current_token.token) {
+                        if !self
+                            .file
+                            .user_types
+                            .iter()
+                            .any(|v: &Type| v.typename == self.current_token.token)
+                        {
                             panic!("Type {} does not exist", self.current_token.token);
                         }
-                        let found_type = self.file.user_types.iter().filter(|v| v.typename == self.current_token.token).nth(0).unwrap();
-                        userobject.object_type = Some(found_type.clone());//Some(self.current_token.token.clone());
+                        let found_type = self
+                            .file
+                            .user_types
+                            .iter()
+                            .filter(|v| v.typename == self.current_token.token)
+                            .nth(0)
+                            .unwrap();
+                        userobject.object_type = Some(found_type.clone()); //Some(self.current_token.token.clone());
                         println!("of type: {}", self.current_token.token);
                         self.next_token(tokens);
                     } else {
@@ -307,7 +331,7 @@ impl TokenTraverse {
     fn look_at_next_token(&self, tokens: &[Token]) -> Token {
         tokens[(self.token_index + 1) as usize].clone()
     }
-    
+
     fn next_token(&mut self, tokens: &[Token]) {
         self.token_index += 1;
         self.current_token = tokens[self.token_index as usize].clone();
@@ -331,7 +355,7 @@ fn consume_token(token: String) -> Token {
             return Token {
                 token: next_token.to_string(),
                 tokentype: TokenType::StringLiteral,
-            }
+            };
         }
         Some('[') => {
             return Token {
@@ -371,7 +395,7 @@ fn consume_token(token: String) -> Token {
             return Token {
                 token: next_token.to_string(),
                 tokentype: TokenType::NumberLiteral,
-            }
+            };
         }
         _ => (),
     }
@@ -440,7 +464,7 @@ fn consume_token(token: String) -> Token {
             return Token {
                 token: next_token.to_string(),
                 tokentype: TokenType::PossibleIdentifier,
-            }
+            };
         }
     }
 }
@@ -497,7 +521,7 @@ fn fill_object_fields(file: &ParsedFile) -> Vec<Object> {
                     println!("{}: {}", object_field.identifier, object_field.value.token);
                     field_found = true;
                     break;
-                } 
+                }
             }
             if field_found == true {
                 field_found = false;
@@ -530,10 +554,12 @@ fn emit_json(typed_objects: &Vec<Object>, user_fields: &Vec<Field>) -> String {
         for field in &object.fields {
             let value: String = field.value.token.clone();
             if value.parse::<i64>().is_ok() {
-                data[object.object_name.clone()][field.identifier.clone()] = value.parse::<i64>().unwrap().into();
+                data[object.object_name.clone()][field.identifier.clone()] =
+                    value.parse::<i64>().unwrap().into();
                 continue;
             } else if value.parse::<bool>().is_ok() {
-                data[object.object_name.clone()][field.identifier.clone()] = value.parse::<bool>().unwrap().into();
+                data[object.object_name.clone()][field.identifier.clone()] =
+                    value.parse::<bool>().unwrap().into();
                 continue;
             }
             data[object.object_name.clone()][field.identifier.clone()] = value.into();
@@ -618,11 +644,16 @@ fn main() {
         match &command_args[2][..] {
             "-o" => {
                 output_path = command_args[3].clone();
-            },
+            }
             _ => (),
         }
     } else {
-        output_path = format!("{}.{}", filepath.file_stem().unwrap().to_str().unwrap().to_string(), "json");
+        output_path = format!(
+            "{}.{}",
+            filepath.file_stem().unwrap().to_str().unwrap().to_string(),
+            "json"
+        );
     }
-    fs::write(output_path, emit_json(&typed_objects, &ast.user_fields)).expect("Unable to write to file");
+    fs::write(output_path, emit_json(&typed_objects, &ast.user_fields))
+        .expect("Unable to write to file");
 }
