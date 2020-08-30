@@ -1,5 +1,13 @@
 use std::io::Read;
 
+// TODO
+// Use directive
+// Stronger Typing
+// Lists
+// List typing
+// Map
+// Map typing
+
 #[derive(PartialEq, Clone, Copy)]
 enum TokenType {
     TypeIdentifier,
@@ -13,13 +21,13 @@ enum TokenType {
     Equals,
     CurlyBracketStart,
     CurlyBracketEnd,
-    // SquareBracketStart,
-    // SquareBracketEnd,
     TypeBool,
     TypeString,
     TypeNumber,
     TypeMap,
     PossibleIdentifier,
+    Import,
+    From,
     EOF,
     Unintitialized,
 }
@@ -39,6 +47,8 @@ struct Field {
 #[derive(Clone)]
 struct Type {
     typename: String,
+    queued: bool,
+    file_path: String,
     fields: Vec<Field>,
 }
 
@@ -63,6 +73,11 @@ struct TokenTraverse {
     file: ParsedFile,
 }
 
+// struct QueuedTypes {
+//     typename: String,
+//     file_origin: std::path::Path,
+// }
+
 impl std::fmt::Display for Token {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.tokentype {
@@ -81,6 +96,8 @@ impl std::fmt::Display for Token {
             TokenType::CurlyBracketEnd => write!(f, "CurlyBracketEnd: {}", self.token),
             TokenType::Equals => write!(f, "Equals: {}", self.token),
             TokenType::TypeAssignment => write!(f, "TypeAssignment: {}", self.token),
+            TokenType::Import => write!(f, "Import: {}", self.token),
+            TokenType::From => write!(f, "From: {}", self.token),
             TokenType::EOF => write!(f, "EOF"),
             TokenType::Unintitialized => write!(f, "Uninitialized Token"),
             // TokenType::SquareBracketStart => write!(f, "SquareBracketStart: {}", self.token),
@@ -105,6 +122,8 @@ impl Type {
     pub fn new() -> Type {
         Type {
             typename: String::new(),
+            queued: false,
+            file_path: String::new(),
             fields: Vec::new(),
         }
     }
@@ -135,6 +154,15 @@ impl ParsedFile {
         }
     }
 }
+
+// impl QueuedTypes {
+//     pub fn new() -> QueuedTypes {
+//         QueuedTypes {
+//             typename : String::new(),
+//             file_origin : std::path::Path::new(),
+//         }
+//     }
+// }
 
 impl TokenTraverse {
     pub fn new(tokens: &[Token]) -> TokenTraverse {
@@ -192,6 +220,21 @@ impl TokenTraverse {
 
     fn block(&mut self, tokens: &[Token]) -> ParsedFile {
         loop {
+            // Use (import) directive
+            if self.accept(TokenType::Import, tokens) {
+                let typename = self.current_token.token.clone();
+                // TODO: Add mass import of types
+                self.next_token(tokens);
+                self.next_token(tokens);
+                let file_origin = self.current_token.token.clone();
+                self.file.user_types.push(Type {
+                    typename : typename,
+                    queued : true,
+                    file_path : file_origin.to_string(),
+                    fields : Vec::new(),
+                });
+            }
+
             // type
             if self.accept(TokenType::TypeIdentifier, tokens) {
                 let mut usertype = Type::new();
@@ -456,6 +499,18 @@ fn consume_token(token: String) -> Token {
                 tokentype: TokenType::TypeList,
             }
         }
+        "use" => {
+            return Token {
+                token: token,
+                tokentype: TokenType::Import,
+            }
+        }
+        "from" =>  {
+            return Token {
+                token: token,
+                tokentype: TokenType::From,
+            }
+        }
         _ => {
             // If a field is typed, we still capture the colon at the end.
             // This remove that colon at the end.
@@ -510,14 +565,57 @@ fn construct_ast(tokens: &[Token]) -> ParsedFile {
 /// and expands each object's fields to have a field of its parent if that field isn't there.
 fn fill_object_fields(file: &ParsedFile) -> Vec<Object> {
     let mut typed_objects: Vec<Object> = vec![];
+    let mut referenced_types: Vec<Type> = vec![];
     for object in &mut file.user_objects.clone() {
         if object.object_type.is_none() {
             continue;
+        } else if object.object_type.clone().unwrap().queued == true {
+
+            let filename = object.object_type.clone().unwrap().file_path;
+            let filepath = std::path::Path::new(&filename);
+
+            let mut file = std::fs::File::open(filepath).unwrap();
+            let mut contents = String::new();
+            file.read_to_string(&mut contents).unwrap();
+
+            let chars: Vec<char> = contents.chars().collect();
+
+            let tokens = lex_characters(&chars);
+
+            // Turning raw tokens into logical symbols
+            let mut symbols = vec![];
+            for token in &tokens {
+                symbols.push(consume_token(token.to_string()));
+            }
+            symbols.push(Token {
+                token: "".to_string(),
+                tokentype: TokenType::EOF,
+            });
+            for symbol in &symbols {
+                println!("{}", symbol);
+            }
+            println!();
+
+            let ast = construct_ast(&symbols.as_slice());
+            for usertype in &ast.user_types {
+                referenced_types.push(usertype.clone());
+            }
+            println!();
         }
 
         let mut field_found = false;
-        println!("{}", object.object_name);
-        for type_field in object.object_type.clone().unwrap().fields {
+        println!("{}: {}", object.object_name, object.object_type.clone().unwrap().typename);
+
+        let mut current_object_type = object.object_type.clone().unwrap();
+        if current_object_type.queued == true {
+            for usertype in &referenced_types {
+                if usertype.typename == current_object_type.typename {
+                    current_object_type = usertype.clone();
+                }
+            }
+        }
+
+        for type_field in current_object_type.fields {
             for object_field in &object.fields {
                 if type_field.identifier == object_field.identifier {
                     println!("{}: {}", object_field.identifier, object_field.value.token);
@@ -571,35 +669,20 @@ fn emit_json(typed_objects: &Vec<Object>, user_fields: &Vec<Field>) -> String {
     json::stringify(data)
 }
 
-fn main() {
-    let command_args: Vec<String> = std::env::args().collect();
-
-    if command_args.len() < 2 {
-        panic!("No filename supplied.");
-    }
-
-    let filename = &command_args[1];
-    let filepath = std::path::Path::new(&filename);
-
-    let mut file = std::fs::File::open(filepath).unwrap();
-    let mut contents = String::new();
-    file.read_to_string(&mut contents).unwrap();
-
-    let chars: Vec<_> = contents.chars().collect();
-
+fn lex_characters(characters: &Vec<char>) -> Vec<String> {
     // Separate file text into tokens
     let mut current_token = String::new();
     let mut tokens = vec![];
     let mut is_string_literal = false;
     let mut is_comment = false;
-    for index in 0..chars.len() {
+    for index in 0..characters.len() {
         // TODO: Multi-line comments would be cool
         // Single Line Comment Checking
-        if (chars[index] == '/') && (chars[index + 1] == '/') {
+        if (characters[index] == '/') && (characters[index + 1] == '/') {
             is_comment = true;
             continue;
         }
-        if (chars[index] == '\n') && (is_comment == true) {
+        if (characters[index] == '\n') && (is_comment == true) {
             is_comment = false;
             continue;
         }
@@ -607,7 +690,7 @@ fn main() {
             continue;
         }
 
-        if (chars[index] == ' ') || (chars[index] == '\n') {
+        if (characters[index] == ' ') || (characters[index] == '\n') {
             let test = current_token.clone();
             if test.trim().is_empty() {
                 continue;
@@ -622,12 +705,33 @@ fn main() {
             continue;
         }
 
-        if chars[index].to_string() == "\"" {
+        if characters[index].to_string() == "\"" {
             is_string_literal = !is_string_literal;
         }
-        current_token.push_str(&chars[index].to_string());
+        current_token.push_str(&characters[index].to_string());
+    }
+    tokens.clone()
+}
+
+fn main() {
+    let command_args: Vec<String> = std::env::args().collect();
+
+    if command_args.len() < 2 {
+        panic!("No arguments supplied.");
     }
 
+    let filename = &command_args[1];
+    let filepath = std::path::Path::new(&filename);
+
+    let mut file = std::fs::File::open(filepath).unwrap();
+    let mut contents = String::new();
+    file.read_to_string(&mut contents).unwrap();
+
+    let chars: Vec<_> = contents.chars().collect();
+
+    let tokens = lex_characters(&chars);
+
+    // Turning raw tokens into logical symbols
     let mut symbols = vec![];
     for token in &tokens {
         symbols.push(consume_token(token.to_string()));
@@ -636,6 +740,9 @@ fn main() {
         token: "".to_string(),
         tokentype: TokenType::EOF,
     });
+    for symbol in &symbols {
+        println!("{}", symbol);
+    }
 
     // TODO: Make this an option type
     let ast = construct_ast(&symbols.as_slice());
