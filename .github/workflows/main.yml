@@ -11,39 +11,23 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        name: [
-            linux,
-            windows,
-            macos
-        ]
-
         include:
-          - name: linux
-            os: ubuntu-latest
-            artifact_name: config_file
-            asset_name: config_file_linux
-          - name: windows
-            os: windows-latest
-            artifact_name: config_file.exe
-            asset_name: config_file_windows
-          - name: macos
-            os: macos-latest
-            artifact_name: config_file
-            asset_name: config_file_macos
+          - os: ubuntu-latest
+            artifact_name: config-file
+            asset_name: config-file-linux-amd64
+          - os: windows-latest
+            artifact_name: config-file.exe
+            asset_name: config-file-windows-amd64
+          - os: macos-latest
+            artifact_name: config-file
+            asset_name: config-file-macos-amd64
 
     steps:
-    - uses: actions/checkout@v1
-
-    - uses: actions-rs/toolchain@v1
-      with:
-        profile: minimal
-        toolchain: stable
-
+    - uses: actions/checkout@v2
     - name: Build
       run: cargo build --release --locked
-
     - name: Upload binaries to release
-      uses: DaVinci789/rust_config_file@v1-release
+      uses: svenstaro/upload-release-action@v2
       with:
         repo_token: ${{ secrets.GITHUB_TOKEN }}
         file: target/release/${{ matrix.artifact_name }}
