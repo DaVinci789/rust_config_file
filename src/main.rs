@@ -37,18 +37,20 @@ struct Token {
     tokentype: TokenType,
 }
 
-#[derive(PartialEq, Clone)]
-struct Field {
-    identifier: String,
-    value: Token,
-}
-
 #[derive(Clone)]
 struct Type {
     typename: String,
     queued: bool,
     file_path: String,
     fields: Vec<Field>,
+}
+
+#[derive(PartialEq, Clone)]
+struct Field {
+    identifier: String,
+    identifier_type: Type,
+    initialized: bool,
+    value: Token,
 }
 
 #[derive(Clone)]
@@ -109,6 +111,8 @@ impl Field {
     pub fn new() -> Field {
         Field {
             identifier: String::new(),
+            identifier_type: Type::new(),
+            initialized: false,
             value: Token {
                 token: String::new(),
                 tokentype: TokenType::Unintitialized,
@@ -124,6 +128,30 @@ impl Type {
             queued: false,
             file_path: String::new(),
             fields: Vec::new(),
+        }
+    }
+    pub fn new_string_type() -> Type {
+        Type {
+            typename: String::from("string"),
+            queued: false,
+            file_path: String::new(),
+            fields: vec![],
+        }
+    }
+    pub fn new_bool_type() -> Type {
+        Type {
+            typename: String::from("bool"),
+            queued: false,
+            file_path: String::new(),
+            fields: vec![],
+        }
+    }
+    pub fn new_number_type() -> Type {
+        Type {
+            typename: String::from("number"),
+            queued: false,
+            file_path: String::new(),
+            fields: vec![],
         }
     }
 }
@@ -154,15 +182,6 @@ impl ParsedFile {
     }
 }
 
-// impl QueuedTypes {
-//     pub fn new() -> QueuedTypes {
-//         QueuedTypes {
-//             typename : String::new(),
-//             file_origin : std::path::Path::new(),
-//         }
-//     }
-// }
-
 impl TokenTraverse {
     pub fn new(tokens: &[Token]) -> TokenTraverse {
         TokenTraverse {
@@ -179,6 +198,13 @@ impl TokenTraverse {
             || token.tokentype == TokenType::BoolLiteral;
     }
 
+    pub fn token_is_type(token: Token) -> bool {
+        return token.tokentype == TokenType::TypeBool
+            || token.tokentype == TokenType::TypeString
+            || token.tokentype == TokenType::TypeNumber
+            || token.tokentype == TokenType::TypeMap;
+    }
+
     fn accept(&mut self, tokentype: TokenType, tokens: &[Token]) -> bool {
         if self.current_token.tokentype == tokentype {
             self.next_token(tokens);
@@ -191,24 +217,36 @@ impl TokenTraverse {
         if self.accept(tokentype, tokens) {
             return true;
         }
-        // error handling
+        // TODO: error handling
         return false;
     }
 
     fn field(&mut self, tokens: &[Token]) -> Field {
         let mut field = Field::new();
-        print!("{} ", self.current_token.token);
+        println!("{}", self.current_token);
         field.identifier = self.current_token.token.clone();
         if !self.expect(TokenType::PossibleIdentifier, tokens) {
             println!("Error Invalid Syntax: {}", self.current_token);
         }
 
+        println!("{}", self.current_token);
+        if TokenTraverse::token_is_type(self.current_token.clone()) {
+            match self.current_token.tokentype {
+                TokenType::TypeBool => field.identifier_type = Type::new_bool_type(),
+                TokenType::TypeString => field.identifier_type = Type::new_string_type(),
+                TokenType::TypeNumber => field.identifier_type = Type::new_number_type(),
+                _ => (),
+            }
+            return field;
+        }
         self.next_token(tokens);
+        println!("{}", self.current_token);
         loop {
             if self.current_token.tokentype == TokenType::Equals {
                 self.next_token(tokens);
             }
             if TokenTraverse::token_is_literal(self.current_token.clone()) {
+                field.initialized = true;
                 field.value = self.current_token.clone();
                 break;
             }
@@ -227,10 +265,10 @@ impl TokenTraverse {
                 self.next_token(tokens);
                 let file_origin = self.current_token.token.clone();
                 self.file.user_types.push(Type {
-                    typename : typename,
-                    queued : true,
-                    file_path : file_origin.to_string(),
-                    fields : Vec::new(),
+                    typename: typename,
+                    queued: true,
+                    file_path: file_origin.to_string(),
+                    fields: Vec::new(),
                 });
             }
 
@@ -239,7 +277,7 @@ impl TokenTraverse {
                 let mut usertype = Type::new();
                 usertype.typename = self.current_token.token.clone();
 
-                println!("Type: {}", self.current_token.token);
+                println!("\nType: {}", self.current_token.token);
                 println!("-------------");
 
                 let sym1 = self.expect(TokenType::PossibleIdentifier, tokens);
@@ -380,7 +418,7 @@ impl TokenTraverse {
 }
 
 fn consume_token(token: String) -> Token {
-    let token_as_str: &str = &(token.clone())[..];
+    let mut token_as_str: &str = &(token.replace(",", "").clone())[..];
     match token_as_str.chars().nth(0) {
         Some('"') => {
             // Remove quotes from string
@@ -388,9 +426,7 @@ fn consume_token(token: String) -> Token {
             if next_token.chars().nth(0) == Some('"') {
                 next_token = &next_token[1..token_as_str.len()];
             }
-            if next_token.chars().nth(next_token.len() - 1) == Some(',') {
-                next_token = &next_token[0..token_as_str.len() - 3];
-            } else if next_token.chars().nth(next_token.len() - 1) == Some('"') {
+            if next_token.chars().nth(next_token.len() - 1) == Some('"') {
                 next_token = &next_token[0..token_as_str.len() - 2];
             }
             return Token {
@@ -429,19 +465,15 @@ fn consume_token(token: String) -> Token {
             }
         }
         Some('#'..='9') => {
-            let mut next_token = token_as_str;
-            if token_as_str.chars().nth(token_as_str.len() - 1) == Some(',') {
-                next_token = &token_as_str[0..token_as_str.len() - 1];
-            }
             return Token {
-                token: next_token.to_string(),
+                token: token_as_str.to_string(),
                 tokentype: TokenType::NumberLiteral,
             };
         }
         _ => (),
     }
 
-    // HACK: I don't know how to not test against a ranged slice and use [..]
+    // HACK: I don't know how to not test against a ranged slice and use [..] instead
     // It keeps looping somewhere when I do that. Need to debug.
     if token_as_str.len() > 4 {
         match &token_as_str[0..4] {
@@ -504,7 +536,7 @@ fn consume_token(token: String) -> Token {
                 tokentype: TokenType::Import,
             }
         }
-        "from" =>  {
+        "from" => {
             return Token {
                 token: token,
                 tokentype: TokenType::From,
@@ -569,7 +601,6 @@ fn fill_object_fields(file: &ParsedFile) -> Vec<Object> {
         if object.object_type.is_none() {
             continue;
         } else if object.object_type.clone().unwrap().queued == true {
-
             let filename = object.object_type.clone().unwrap().file_path;
             let filepath = std::path::Path::new(&filename);
 
@@ -603,7 +634,11 @@ fn fill_object_fields(file: &ParsedFile) -> Vec<Object> {
         }
 
         let mut field_found = false;
-        println!("{}: {}", object.object_name, object.object_type.clone().unwrap().typename);
+        println!(
+            "{}: {}",
+            object.object_name,
+            object.object_type.clone().unwrap().typename
+        );
 
         let mut current_object_type = object.object_type.clone().unwrap();
         if current_object_type.queued == true {
@@ -625,6 +660,9 @@ fn fill_object_fields(file: &ParsedFile) -> Vec<Object> {
             if field_found == true {
                 field_found = false;
             } else {
+                if type_field.initialized == false {
+                    panic!("Field '{}' must be initialized by object '{}'", type_field.identifier, object.object_name);
+                }
                 object.fields.push(type_field.clone());
                 println!("{}: {}", type_field.identifier, type_field.value.token);
             }
@@ -768,46 +806,46 @@ fn main() {
         .expect("Unable to write to file");
 }
 
-/// Unit Testing
+// Unit Testing
 
-#[allow(dead_code)]
-fn test_get_file() -> Vec<Token> {
-    let mut file = std::fs::File::open("src/file.cfg").unwrap();
-    let mut contents = String::new();
-    file.read_to_string(&mut contents).unwrap();
+// #[allow(dead_code)]
+// fn test_get_file() -> Vec<Token> {
+//     let mut file = std::fs::File::open("src/file.cfg").unwrap();
+//     let mut contents = String::new();
+//     file.read_to_string(&mut contents).unwrap();
 
-    let chars: Vec<_> = contents.chars().collect();
+//     let chars: Vec<_> = contents.chars().collect();
 
-    let tokens = lex_characters(&chars);
+//     let tokens = lex_characters(&chars);
 
-    let mut symbols = vec![];
-    for token in &tokens {
-        symbols.push(consume_token(token.to_string()));
-    }
-    symbols.push(Token {
-        token: "".to_string(),
-        tokentype: TokenType::EOF,
-    });
-    symbols.clone()
-}
+//     let mut symbols = vec![];
+//     for token in &tokens {
+//         symbols.push(consume_token(token.to_string()));
+//     }
+//     symbols.push(Token {
+//         token: "".to_string(),
+//         tokentype: TokenType::EOF,
+//     });
+//     symbols.clone()
+// }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+// #[cfg(test)]
+// mod tests {
+//     use super::*;
 
-    #[test]
-    fn symbols_1() {
-        let symbols = test_get_file();
+//     #[test]
+//     fn symbols_1() {
+//         let symbols = test_get_file();
 
-        assert_eq!(symbols[0].token, String::from("identifier"));
-        assert_eq!(symbols[2].token, String::from("value"));
-    }
+//         assert_eq!(symbols[0].token, String::from("identifier"));
+//         assert_eq!(symbols[2].token, String::from("value"));
+//     }
 
-    #[test]
-    fn type_1() {
-        let symbols = test_get_file();
-        let ast = construct_ast(&symbols.as_slice());
-        let typed_objects = fill_object_fields(&ast);
-        assert_eq!(typed_objects[0].object_name, String::from("Vampire"));
-    }
-}
+//     #[test]
+//     fn type_1() {
+//         let symbols = test_get_file();
+//         let ast = construct_ast(&symbols.as_slice());
+//         let typed_objects = fill_object_fields(&ast);
+//         assert_eq!(typed_objects[0].object_name, String::from("Vampire"));
+//     }
+// }
