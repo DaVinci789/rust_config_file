@@ -245,7 +245,6 @@ impl TokenTraverse {
                 println!("-------------");
 
                 self.current_type = Some(self.file.user_types.iter().filter(|v| v.typename == corrected_type).nth(0).unwrap().clone());
-                //self.current_type = Some(Type { typename: corrected_type, fields: Vec::new()});
             }
 
             // Any top level identifier
@@ -516,12 +515,28 @@ fn fill_object_fields(file: &ParsedFile) -> Vec<Object> {
 fn emit_json(typed_objects: &Vec<Object>, user_fields: &Vec<Field>) -> String {
     let mut data = json::JsonValue::new_object();
     for field in user_fields {
-        data[field.identifier.clone()] = field.value.token.clone().into();
+        let value: String = field.value.token.clone();
+        if value.parse::<i64>().is_ok() {
+            data[field.identifier.clone()] = value.parse::<i64>().unwrap().into();
+            continue;
+        } else if value.parse::<bool>().is_ok() {
+            data[field.identifier.clone()] = value.parse::<bool>().unwrap().into();
+            continue;
+        }
+        data[field.identifier.clone()] = value.into();
     }
     for object in typed_objects {
         data[object.object_name.clone()] = json::JsonValue::new_object();
         for field in &object.fields {
-            data[object.object_name.clone()][field.identifier.clone()] = field.value.token.clone().into();
+            let value: String = field.value.token.clone();
+            if value.parse::<i64>().is_ok() {
+                data[object.object_name.clone()][field.identifier.clone()] = value.parse::<i64>().unwrap().into();
+                continue;
+            } else if value.parse::<bool>().is_ok() {
+                data[object.object_name.clone()][field.identifier.clone()] = value.parse::<bool>().unwrap().into();
+                continue;
+            }
+            data[object.object_name.clone()][field.identifier.clone()] = value.into();
         }
     }
     println!("{}", data);
@@ -529,10 +544,12 @@ fn emit_json(typed_objects: &Vec<Object>, user_fields: &Vec<Field>) -> String {
 }
 
 fn main() {
-    let command_args: std::vec::Vec<std::string::String> = std::env::args().collect();
+    let command_args: Vec<String> = std::env::args().collect();
+
     if command_args.len() != 2 {
         panic!("No filename supplied.");
     }
+
     let filename = &command_args[1];
     let filepath = std::path::Path::new(&filename);
 
@@ -540,7 +557,7 @@ fn main() {
     let mut contents = String::new();
     file.read_to_string(&mut contents).unwrap();
 
-    let chars: std::vec::Vec<_> = contents.chars().collect();
+    let chars: Vec<_> = contents.chars().collect();
 
     let mut current_token = String::new();
     let mut tokens = vec![];
